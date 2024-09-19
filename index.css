@@ -1,6 +1,8 @@
 body {
     margin: 0;
     padding: 0;
+    font-family: 'Arial', sans-serif;
+    background-color: #f0f0f0;
 }
 
 #map {
@@ -12,33 +14,94 @@ body {
 
 #controls {
     position: absolute;
-    top: 10px;
-    left: 10px;
+    top: 20px;
+    left: 20px;
     z-index: 1;
     background: white;
-    padding: 10px;
-    border-radius: 5px;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
 .geocoder {
     width: 100%;
-    margin-bottom: 10px;
+    margin-bottom: 15px;
+}
+
+#route {
+    width: 100%;
+    padding: 10px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+#route:hover {
+    background-color: #45a049;
 }
 
 #slider-container {
     position: absolute;
-    bottom: 20px;
+    bottom: 30px;
     left: 50%;
     transform: translateX(-50%);
     width: 80%;
+    max-width: 600px;
     z-index: 1;
     background: white;
-    padding: 10px;
-    border-radius: 5px;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 
 #slider {
     width: 100%;
+    margin-bottom: 15px;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 10px;
+    background: #ddd;
+    outline: none;
+    border-radius: 5px;
+}
+
+#slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    background: #4CAF50;
+    cursor: pointer;
+    border-radius: 50%;
+}
+
+#slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    background: #4CAF50;
+    cursor: pointer;
+    border-radius: 50%;
+}
+
+#play {
+    padding: 10px 20px;
+    font-size: 16px;
+    cursor: pointer;
+    background-color: #008CBA;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    transition: background-color 0.3s;
+}
+
+#play:hover {
+    background-color: #007B9A;
 }
 
 .mapboxgl-ctrl-geocoder {
@@ -47,13 +110,6 @@ body {
     font-size: 15px;
     line-height: 20px;
     margin-top: 0;
-}
-
-#play {
-    margin-left: 10px;
-    padding: 5px 10px;
-    font-size: 14px;
-    cursor: pointer;
 }
 
 .current-position-marker {
@@ -70,15 +126,15 @@ body {
     flex-direction: column;
     width: 200px;
     background-color: white;
-    border-radius: 4px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
     overflow: hidden;
-    max-height: 300px; /* Limit the height and enable scrolling if needed */
+    max-height: 300px;
     overflow-y: auto;
 }
 
 #layer-switcher button {
-    padding: 10px;
+    padding: 12px;
     margin: 0;
     cursor: pointer;
     background-color: #f8f8f8;
@@ -87,10 +143,10 @@ body {
     text-align: left;
     font-size: 14px;
     transition: background-color 0.3s;
-    white-space: normal; /* Allow text to wrap */
-    word-wrap: break-word; /* Break long words if necessary */
-    width: 100%; /* Ensure button takes full width */
-    box-sizing: border-box; /* Include padding in width calculation */
+    white-space: normal;
+    word-wrap: break-word;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 #layer-switcher button:last-child {
@@ -103,4 +159,9 @@ body {
 
 #layer-switcher button:active {
     background-color: #d8d8d8;
+}
+
+#layer-switcher button.active {
+    background-color: #4CAF50;
+    color: white;
 }

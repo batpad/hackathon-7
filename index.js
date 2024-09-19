@@ -121,7 +121,11 @@
     function createLayerButton(text, onClick) {
         const button = document.createElement('button');
         button.textContent = text;
-        button.addEventListener('click', onClick);
+        button.addEventListener('click', (e) => {
+            document.querySelectorAll('#layer-switcher button').forEach(btn => btn.classList.remove('active'));
+            e.target.classList.add('active');
+            onClick();
+        });
         return button;
     }
 
