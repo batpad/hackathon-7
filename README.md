@@ -1,4 +1,4 @@
-Try it here: https://batpad.github.io/hackathon-7/
+Try it here: https://developmentseed.org/hackathon-7/
 
 ## Getting Started
 
