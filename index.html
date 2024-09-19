@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapbox Route Animator</title>
+    <script src='https://api.mapbox.com/mapbox-gl-js/v2.9.1/mapbox-gl.js'></script>
+    <link href='https://api.mapbox.com/mapbox-gl-js/v2.9.1/mapbox-gl.css' rel='stylesheet' />
+    <script src='https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v4.7.0/mapbox-gl-geocoder.min.js'></script>
+    <link rel='stylesheet' href='https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v4.7.0/mapbox-gl-geocoder.css' type='text/css' />
+    <link rel="stylesheet" href="index.css">
+    <script src='https://unpkg.com/@mapbox/mapbox-sdk/umd/mapbox-sdk.min.js'></script>
+</head>
+<body>
+    <div id="map"></div>
+    <div id="controls">
+        <div id="geocoder-start" class="geocoder"></div>
+        <div id="geocoder-end" class="geocoder"></div>
+        <button id="route">Get Route</button>
+    </div>
+    <div id="slider-container" style="display: none;">
+        <input type="range" id="slider" min="0" max="1000" value="0">
+        <button id="play">Play</button>
+    </div>
+    <script src="index.js"></script>
+</body>
+</html>
