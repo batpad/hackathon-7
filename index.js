@@ -8,7 +8,7 @@
 
     // Mapbox access token
     mapboxgl.accessToken = 'pk.eyJ1Ijoic2FuamF5YmhhbmdhcjIiLCJhIjoiY20xOHd3ZGtxMDA5MjJqcjFsdG5qNWhweCJ9.R9k657eX3Atu-g0dwGEqOA';
-
+    const OPENAQ_API_KEY = '0da4666ad983bf054ac303700a5493b19397334d0bc5a562663d538ea9db2ecc';
     // Initialize Mapbox SDK client
     const mapboxClient = mapboxSdk({ accessToken: mapboxgl.accessToken });
 
@@ -51,6 +51,32 @@
         }
     ];
 
+    // Add OpenAQ layer configuration
+    const openAQLayer = {
+        id: 'openaq-data',
+        type: 'circle',
+        source: {
+            type: 'geojson',
+            data: {
+                type: 'FeatureCollection',
+                features: []
+            }
+        },
+        paint: {
+            'circle-radius': 8,
+            'circle-color': [
+                'interpolate',
+                ['linear'],
+                ['get', 'value'],
+                0, '#00ff00',
+                50, '#ffff00',
+                100, '#ff0000'
+            ],
+            'circle-opacity': 0.7
+        }
+    };
+
+
     /**
      * Initialize the map
      */
@@ -63,13 +89,30 @@
         bearing: CONFIG.INITIAL_BEARING
     });
 
+    // Global variable to track if OpenAQ layer has been added
+    let openAQLayerAdded = false;
+
+    // Add this line to call addLayerSwitcher immediately after map initialization
+    map.on('load', () => {
+        console.log('Map loaded');
+        addOpenAQLayer();
+        addLayerSwitcher(); // Explicitly call addLayerSwitcher here
+        initRouteFromURL();
+    });
+
     /**
      * Add layer switcher control to the map
      */
     function addLayerSwitcher() {
-        const layerSwitcher = document.createElement('div');
-        layerSwitcher.id = 'layer-switcher';
-        layerSwitcher.className = 'mapboxgl-ctrl mapboxgl-ctrl-group';
+        console.log('Adding layer switcher');
+        const layerSwitcher = document.getElementById('layer-switcher');
+        if (!layerSwitcher) {
+            console.error('Layer switcher element not found');
+            return;
+        }
+
+        // Clear existing buttons
+        layerSwitcher.innerHTML = '';
 
         // Add base layers
         Object.keys(baseLayers).forEach(layer => {
@@ -106,10 +149,48 @@
             layerSwitcher.appendChild(button);
         });
 
-        map.addControl({
-            onAdd: () => layerSwitcher,
-            onRemove: () => layerSwitcher.parentNode.removeChild(layerSwitcher)
-        }, 'top-right');
+        // Add OpenAQ layer toggle
+        const openAQToggle = createLayerButton('OpenAQ', () => {
+            if (!openAQLayerAdded) {
+                console.log('OpenAQ layer not yet added. Adding now...');
+                addOpenAQLayer();
+            }
+            
+            toggleOpenAQLayer(openAQToggle);
+        });
+        layerSwitcher.appendChild(openAQToggle);
+    }
+
+    /**
+     * New function to toggle OpenAQ layer visibility
+     * @param {HTMLButtonElement} button - The button element associated with the OpenAQ layer toggle
+     */
+    function toggleOpenAQLayer(button) {
+        console.log('Toggling OpenAQ layer');
+        if (!map.getLayer('openaq-data')) {
+            console.error('OpenAQ layer not found. Attempting to add it.');
+            addOpenAQLayer();
+        }
+
+        try {
+            const visibility = map.getLayoutProperty('openaq-data', 'visibility');
+            console.log('Current OpenAQ layer visibility:', visibility);
+            if (visibility === 'visible') {
+                map.setLayoutProperty('openaq-data', 'visibility', 'none');
+                map.setLayoutProperty('openaq-labels', 'visibility', 'none');
+                button.classList.remove('active');
+                console.log('OpenAQ layer hidden');
+            } else {
+                map.setLayoutProperty('openaq-data', 'visibility', 'visible');
+                map.setLayoutProperty('openaq-labels', 'visibility', 'visible');
+                button.classList.add('active');
+                console.log('OpenAQ layer shown');
+                fetchOpenAQData();
+            }
+        } catch (error) {
+            console.error('Error toggling OpenAQ layer:', error);
+            alert('There was an error toggling the OpenAQ layer. Please try refreshing the page.');
+        }
     }
 
     /**
@@ -138,6 +219,7 @@
                 addRouteToMap();
                 addMarkersToMap();
             }
+            addOpenAQLayer(); // Add this line to ensure OpenAQ layer is added after style changes
         });
     }
 
@@ -145,6 +227,11 @@
      * Add route to map
      */
     function addRouteToMap() {
+        if (map.getSource('route')) {
+            map.removeLayer('route');
+            map.removeSource('route');
+        }
+
         map.addSource('route', {
             'type': 'geojson',
             'data': {
@@ -438,15 +525,179 @@
         }
     }
 
+    /**
+     * Fetch OpenAQ data and add it to the map
+     */
+    function fetchOpenAQData() {
+        console.log('fetchOpenAQData called');
+        if (!map.getSource('openaq-data')) {
+            console.error('OpenAQ data source not found on the map');
+            return;
+        }
+
+        const bounds = map.getBounds();
+        const center = bounds.getCenter();
+        const url = `https://api.openaq.org/v2/latest?limit=100&parameter=pm25&coordinates=${center.lat},${center.lng}&radius=25000`;
+
+        console.log('Fetching OpenAQ data from URL:', url);
+
+        fetch(url, {
+            method: 'GET',
+            headers: {
+                'X-API-Key': OPENAQ_API_KEY
+            }
+        })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('OpenAQ data received:', data);
+                processOpenAQData(data);
+            })
+            .catch(error => {
+                console.error('Error fetching OpenAQ data:', error);
+            });
+    }
+
+    // Declare processOpenAQData in the global scope
+    window.processOpenAQData = function(data) {
+        console.log('processOpenAQData called with data:', data);
+
+        if (!data || !data.results || !Array.isArray(data.results)) {
+            console.error('Unexpected API response structure:', data);
+            return;
+        }
+
+        console.log('Number of results:', data.results.length);
+
+        const features = data.results
+            .filter(result => {
+                console.log('Filtering result:', result);
+                if (!result || !result.coordinates || !result.measurements) {
+                    console.warn('Invalid result object:', result);
+                    return false;
+                }
+                return result.measurements.length > 0;
+            })
+            .map(result => {
+                console.log('Mapping result:', result);
+                const feature = {
+                    type: 'Feature',
+                    geometry: {
+                        type: 'Point',
+                        coordinates: [result.coordinates.longitude, result.coordinates.latitude]
+                    },
+                    properties: {
+                        value: result.measurements[0].value,
+                        unit: result.measurements[0].unit,
+                        location: result.location
+                    }
+                };
+                console.log('Processed feature:', JSON.stringify(feature));
+                return feature;
+            });
+
+        console.log('Total processed features:', features.length);
+
+        if (features.length === 0) {
+            console.warn('No valid OpenAQ data points found in the current view');
+            return;
+        }
+
+        if (!window.map || !window.map.getSource('openaq-data')) {
+            console.error('OpenAQ data source not found when trying to update');
+            return;
+        }
+
+        window.map.getSource('openaq-data').setData({
+            type: 'FeatureCollection',
+            features: features
+        });
+
+        console.log('OpenAQ data updated on the map');
+    };
+
+    // Make map globally accessible
+    window.map = map;
+
+    // Add this function definition near your other function definitions
+    function addOpenAQLayer() {
+        console.log('Adding OpenAQ layer');
+        if (map.getLayer('openaq-data')) {
+            console.log('OpenAQ layer already exists');
+            return;
+        }
+
+        // Ensure the style has a glyphs property
+        if (!map.getStyle().glyphs) {
+            map.setStyle({
+                ...map.getStyle(),
+                glyphs: "mapbox://fonts/mapbox/{fontstack}/{range}.pbf"
+            });
+        }
+
+        map.addSource('openaq-data', {
+            type: 'geojson',
+            data: {
+                type: 'FeatureCollection',
+                features: []
+            }
+        });
+
+        // Add circle layer
+        map.addLayer({
+            id: 'openaq-data',
+            type: 'circle',
+            source: 'openaq-data',
+            paint: {
+                'circle-radius': 15,  // Increased size
+                'circle-color': [
+                    'interpolate',
+                    ['linear'],
+                    ['get', 'value'],
+                    0, '#00ff00',
+                    50, '#ffff00',
+                    100, '#ff0000'
+                ],
+                'circle-opacity': 1,  // Full opacity
+                'circle-stroke-width': 2,  // Add a stroke
+                'circle-stroke-color': '#000000'  // Black stroke
+            },
+            layout: {
+                'visibility': 'none'  // Start with the layer hidden
+            }
+        });
+
+        // Add text layer for labels
+        map.addLayer({
+            id: 'openaq-labels',
+            type: 'symbol',
+            source: 'openaq-data',
+            layout: {
+                'text-field': ['concat', ['to-string', ['get', 'value']], ' ', ['get', 'unit']],
+                'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+                'text-size': 12,
+                'text-offset': [0, -2],
+                'text-anchor': 'bottom',
+                'visibility': 'none'  // Start with the layer hidden
+            },
+            paint: {
+                'text-color': '#ffffff',
+                'text-halo-color': '#000000',
+                'text-halo-width': 1
+            }
+        });
+
+        console.log('OpenAQ layer added');
+        openAQLayerAdded = true;  // Set the flag to true
+    }
+
     // Event listeners
     document.getElementById('route').addEventListener('click', getRoute);
     document.getElementById('play').addEventListener('click', togglePlayPause);
-
-    // Initialize map
-    map.on('load', () => {
-        addLayerSwitcher();
-        initRouteFromURL();
-    });
 
     // Load Turf.js library
     const script = document.createElement('script');
