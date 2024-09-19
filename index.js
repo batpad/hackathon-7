@@ -236,9 +236,8 @@
         }).send()
         .then(response => {
             route = response.body.routes[0].geometry.coordinates;
-            routeLength = turf.length(turf.lineString(route), {units: 'kilometers'}) * 1000; // Convert to meters
-            const animationDuration = routeLength / CONFIG.SPEED_FACTOR; // Calculate duration in seconds
-
+            routeLength = turf.length(turf.lineString(route), {units: 'kilometers'});
+            
             if (map.getSource('route')) {
                 map.removeLayer('route');
                 map.removeSource('route');
@@ -272,12 +271,13 @@
             
             // Modify the slider setup
             const slider = document.getElementById('slider');
-            slider.max = animationDuration * 1000; // Set max value to animation duration in milliseconds
+            slider.max = routeLength * 1000; // Set max value to route length in meters
             slider.value = 0;
 
             // Animate route on slider change
             slider.addEventListener('input', (e) => {
-                animateRoute(parseFloat(e.target.value) / 1000);
+                const distanceAlongRoute = parseFloat(e.target.value) / 1000; // Convert to kilometers
+                animateRoute(distanceAlongRoute);
             });
 
             // Initial animation
@@ -310,19 +310,19 @@
      * Play route animation
      */
     function playAnimation() {
-        const startTime = Date.now();
         const slider = document.getElementById('slider');
-        const animationDuration = parseInt(slider.max);
+        const animationDuration = parseInt(slider.max) / CONFIG.SPEED_FACTOR; // Calculate duration based on route length and speed
+        const startTime = Date.now() - (parseInt(slider.value) / CONFIG.SPEED_FACTOR);
 
         animationInterval = setInterval(() => {
             const currentTime = Date.now();
             const elapsedTime = currentTime - startTime;
-            const progress = Math.min(elapsedTime / animationDuration, 1);
+            const distance = (elapsedTime * CONFIG.SPEED_FACTOR) / 1000; // Calculate distance in meters
             
-            slider.value = elapsedTime;
-            animateRoute(progress);
+            slider.value = Math.min(distance, slider.max);
+            animateRoute(distance / 1000); // Convert to kilometers for animateRoute
 
-            if (progress >= 1) {
+            if (distance >= parseFloat(slider.max)) {
                 clearInterval(animationInterval);
                 document.getElementById('play').textContent = 'Play';
                 isPlaying = false;
@@ -331,16 +331,16 @@
     }
 
     /**
-     * Animate route at given progress
-     * @param {number} progress - Animation progress (0 to 1)
+     * Animate route at given distance along the route
+     * @param {number} distanceAlongRoute - Distance along the route in kilometers
      */
-    function animateRoute(progress) {
+    function animateRoute(distanceAlongRoute) {
         if (!route || route.length === 0) return;
 
-        const pointAlong = turf.along(turf.lineString(route), routeLength * progress / 1000);
-        const pointAhead = turf.along(turf.lineString(route), routeLength * Math.min(progress + 0.0005, 1) / 1000);
+        const pointAlong = turf.along(turf.lineString(route), distanceAlongRoute);
+        const pointAhead = turf.along(turf.lineString(route), Math.min(distanceAlongRoute + 0.0005, routeLength));
         const bearing = turf.bearing(pointAlong.geometry.coordinates, pointAhead.geometry.coordinates);
-        const pointBehind = turf.along(turf.lineString(route), routeLength * Math.max(progress - 0.0005, 0) / 1000);
+        const pointBehind = turf.along(turf.lineString(route), Math.max(distanceAlongRoute - 0.0005, 0));
         
         const cameraTarget = [
             pointBehind.geometry.coordinates[0] * 0.3 + pointAlong.geometry.coordinates[0] * 0.7,
