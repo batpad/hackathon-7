@@ -198,7 +198,6 @@ geocoderEnd.on('result', (e) => {
 // Add this after the geocoder setup
 document.getElementById('route').addEventListener('click', getRoute);
 
-// Modify the getRoute function
 function getRoute() {
     if (!startCoords || !endCoords) {
         alert('Please select both start and end points');
@@ -414,124 +413,9 @@ function initRouteFromURL() {
         
         // Wait for the map to load before calling getRoute
         if (map.loaded()) {
-            getRouteFromURL();
+            getRoute();
         } else {
-            map.on('load', getRouteFromURL);
+            map.on('load', getRoute);
         }
     }
-}
-
-// Add a new function to handle getting the route from URL parameters
-function getRouteFromURL() {
-    if (startCoords && endCoords) {
-        // Add markers for start and end points
-        new mapboxgl.Marker({ color: '#00FF00' })
-            .setLngLat(startCoords)
-            .addTo(map);
-
-        new mapboxgl.Marker({ color: '#FF0000' })
-            .setLngLat(endCoords)
-            .addTo(map);
-
-        // Call getRoute to draw the route and set up the animation
-        getRoute();
-    }
-}
-
-// Modify the getRoute function to use the global startCoords and endCoords
-function getRoute() {
-    if (!startCoords || !endCoords) {
-        alert('Please select both start and end points');
-        return;
-    }
-
-    updateURLParams(startCoords, endCoords);
-
-    // Use Mapbox Directions SDK
-    mapboxClient.directions.getDirections({
-        profile: 'driving',
-        waypoints: [
-            { coordinates: startCoords },
-            { coordinates: endCoords }
-        ],
-        geometries: 'geojson'
-    }).send()
-    .then(response => {
-        route = response.body.routes[0].geometry.coordinates;
-        routeLength = turf.length(turf.lineString(route), {units: 'kilometers'}) * 1000; // Convert to meters
-        const animationDuration = routeLength / SPEED_FACTOR; // Calculate duration in seconds
-
-        if (map.getSource('route')) {
-            map.removeLayer('route');
-            map.removeSource('route');
-        }
-
-        map.addSource('route', {
-            'type': 'geojson',
-            'data': {
-                'type': 'Feature',
-                'properties': {},
-                'geometry': {
-                    'type': 'LineString',
-                    'coordinates': route
-                }
-            }
-        });
-
-        map.addLayer({
-            'id': 'route',
-            'type': 'line',
-            'source': 'route',
-            'layout': {
-                'line-join': 'round',
-                'line-cap': 'round'
-            },
-            'paint': {
-                'line-color': '#888',
-                'line-width': 8
-            }
-        });
-
-        // Add start and end markers
-        new mapboxgl.Marker({ color: '#00FF00' })
-            .setLngLat(startCoords)
-            .addTo(map);
-
-        new mapboxgl.Marker({ color: '#FF0000' })
-            .setLngLat(endCoords)
-            .addTo(map);
-
-        // Add current position marker
-        const el = document.createElement('div');
-        el.className = 'current-position-marker';
-        currentPositionMarker = new mapboxgl.Marker(el)
-            .setLngLat(route[0])
-            .addTo(map);
-
-        // Fit the map to the route
-        const bounds = new mapboxgl.LngLatBounds();
-        route.forEach(coord => bounds.extend(coord));
-        map.fitBounds(bounds, { padding: 50 });
-
-        // Show slider and play button
-        document.getElementById('slider-container').style.display = 'block';
-        
-        // Modify the slider setup
-        const slider = document.getElementById('slider');
-        slider.max = animationDuration * 1000; // Set max value to animation duration in milliseconds
-        slider.value = 0;
-
-        // Animate route on slider change
-        document.getElementById('slider').addEventListener('input', (e) => {
-            animateRoute(parseFloat(e.target.value) / 1000);
-        });
-
-        // Add play button functionality
-        const playButton = document.getElementById('play');
-        playButton.addEventListener('click', togglePlayPause);
-
-        // Initial animation
-        animateRoute(0);
-    })
-    .catch(error => console.error('Error:', error));
 }
