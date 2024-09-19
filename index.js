@@ -230,13 +230,26 @@
 
         updateURLParams(startCoords, endCoords);
 
+        // Calculate intermediate points
+        const numPoints = 25; // Increase for more accuracy, decrease for better performance
+        const lineString = turf.lineString([startCoords, endCoords]);
+        const distance = turf.length(lineString);
+        const waypoints = [{ coordinates: startCoords }];
+
+        for (let i = 1; i < numPoints - 1; i++) {
+            const point = turf.along(lineString, (distance * i) / (numPoints - 1));
+            waypoints.push({ coordinates: point.geometry.coordinates });
+        }
+
+        waypoints.push({ coordinates: endCoords });
+
         mapboxClient.directions.getDirections({
-            profile: 'driving',
-            waypoints: [
-                { coordinates: startCoords },
-                { coordinates: endCoords }
-            ],
-            geometries: 'geojson'
+            profile: 'driving-traffic',
+            waypoints: waypoints,
+            geometries: 'geojson',
+            overview: 'full',
+            steps: true,
+            annotations: ['distance', 'duration', 'speed']
         }).send()
         .then(response => {
             route = response.body.routes[0].geometry.coordinates;
