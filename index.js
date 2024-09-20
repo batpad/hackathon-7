@@ -77,6 +77,17 @@
         fetchAvailableParameters().then(parameters => {
             console.log('Fetched parameters:', parameters);
         });
+
+        // Add sky layer
+        map.addLayer({
+            'id': 'sky',
+            'type': 'sky',
+            'paint': {
+                'sky-type': 'atmosphere',
+                'sky-atmosphere-sun': [0.0, 0.0],
+                'sky-atmosphere-sun-intensity': 15
+            }
+        });
     });
 
     /**
@@ -107,13 +118,18 @@
         additionalLayers.forEach((layer, index) => {
             const button = createLayerButton(layer.title, () => {
                 if (index === 0) { // Urban Emission Data
-                    const visibility = map.getLayoutProperty('urban-emission-layer', 'visibility');
-                    if (visibility === 'visible') {
-                        map.setLayoutProperty('urban-emission-layer', 'visibility', 'none');
-                        button.classList.remove('active');
-                    } else {
-                        map.setLayoutProperty('urban-emission-layer', 'visibility', 'visible');
+                    if (!map.getLayer('urban-emission-layer')) {
+                        addUrbanEmissionLayer();
                         button.classList.add('active');
+                    } else {
+                        const visibility = map.getLayoutProperty('urban-emission-layer', 'visibility');
+                        if (visibility === 'visible') {
+                            map.setLayoutProperty('urban-emission-layer', 'visibility', 'none');
+                            button.classList.remove('active');
+                        } else {
+                            map.setLayoutProperty('urban-emission-layer', 'visibility', 'visible');
+                            button.classList.add('active');
+                        }
                     }
                 } else {
                     map.setStyle({
@@ -169,6 +185,16 @@
                 addRouteToMap();
                 addMarkersToMap();
             }
+            // Add sky layer back on top
+            map.addLayer({
+                'id': 'sky',
+                'type': 'sky',
+                'paint': {
+                    'sky-type': 'atmosphere',
+                    'sky-atmosphere-sun': [0.0, 0.0],
+                    'sky-atmosphere-sun-intensity': 15
+                }
+            });
         });
     }
 
@@ -787,20 +813,24 @@
      */
     function addUrbanEmissionLayer() {
         const urbanEmissionLayer = additionalLayers[0]; // Urban Emission Data is now the first layer
-        map.addSource('urban-emission', {
-            type: 'raster',
-            tiles: [urbanEmissionLayer.tileURL],
-            tileSize: 256,
-            attribution: urbanEmissionLayer.attribution
-        });
-        map.addLayer({
-            id: 'urban-emission-layer',
-            type: 'raster',
-            source: 'urban-emission',
-            paint: {
-                'raster-opacity': 0.5
-            }
-        });
+        if (!map.getSource('urban-emission')) {
+            map.addSource('urban-emission', {
+                type: 'raster',
+                tiles: [urbanEmissionLayer.tileURL],
+                tileSize: 256,
+                attribution: urbanEmissionLayer.attribution
+            });
+        }
+        if (!map.getLayer('urban-emission-layer')) {
+            map.addLayer({
+                id: 'urban-emission-layer',
+                type: 'raster',
+                source: 'urban-emission',
+                paint: {
+                    'raster-opacity': 0.5
+                }
+            });
+        }
     }
 
     // Make map globally accessible
