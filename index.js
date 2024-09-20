@@ -259,7 +259,7 @@ function getRoute() {
         profile: 'driving',
         waypoints: waypoints,
         geometries: 'geojson',
-        overview: 'simplified',
+        overview: 'full',
         steps: true,
         annotations: ['distance', 'duration', 'speed']
     }).send()
