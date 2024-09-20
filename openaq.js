@@ -1,14 +1,12 @@
 import { delay } from './utils.js';
 
-const OPENAQ_API_KEY = '0da4666ad983bf054ac303700a5493b19397334d0bc5a562663d538ea9db2ecc';
-const corsProxy = 'https://cors-anywhere.herokuapp.com/';
+const corsProxy = 'https://wastheinternetamistake.com/index.php?url=';
 
 async function fetchWithRetry(url, retries = 3, backoff = 1000) {
     try {
         const response = await fetch(url, {
             method: 'GET',
             headers: {
-                'X-API-Key': OPENAQ_API_KEY,
                 'accept': 'application/json'
             }
         });
