@@ -318,7 +318,7 @@
         updateURLParams(startCoords, endCoords);
 
         // Calculate intermediate points
-        const numPoints = 25; // Increase for more accuracy, decrease for better performance
+        const numPoints = 10; // Increase for more accuracy, decrease for better performance
         const lineString = turf.lineString([startCoords, endCoords]);
         const distance = turf.length(lineString);
         const waypoints = [{ coordinates: startCoords }];
@@ -331,10 +331,10 @@
         waypoints.push({ coordinates: endCoords });
 
         mapboxClient.directions.getDirections({
-            profile: 'driving-traffic',
+            profile: 'driving',
             waypoints: waypoints,
             geometries: 'geojson',
-            overview: 'full',
+            overview: 'simplified',
             steps: true,
             annotations: ['distance', 'duration', 'speed']
         }).send()
@@ -537,7 +537,10 @@
 
         const bounds = map.getBounds();
         const center = bounds.getCenter();
-        const url = `https://api.openaq.org/v2/latest?limit=100&parameter=pm25&coordinates=${center.lat},${center.lng}&radius=25000`;
+        const lat = center.lat.toFixed(6);
+        const lng = center.lng.toFixed(6);
+        const corsProxy = 'https://cors-anywhere.herokuapp.com/';
+        const url = `${corsProxy}https://api.openaq.org/v2/latest?limit=100&parameter=pm25&coordinates=${lat},${lng}&radius=25000`;
 
         console.log('Fetching OpenAQ data from URL:', url);
 
@@ -549,7 +552,9 @@
         })
             .then(response => {
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    return response.text().then(text => {
+                        throw new Error(`HTTP error! status: ${response.status}, message: ${text}`);
+                    });
                 }
                 return response.json();
             })
@@ -559,6 +564,7 @@
             })
             .catch(error => {
                 console.error('Error fetching OpenAQ data:', error);
+                alert('Failed to fetch OpenAQ data. Please check the console for more details.');
             });
     }
 
@@ -580,10 +586,11 @@
                     console.warn('Invalid result object:', result);
                     return false;
                 }
-                return result.measurements.length > 0;
+                return result.measurements.some(m => m.parameter === 'pm25');
             })
             .map(result => {
                 console.log('Mapping result:', result);
+                const pm25Data = result.measurements.find(m => m.parameter === 'pm25');
                 const feature = {
                     type: 'Feature',
                     geometry: {
@@ -591,8 +598,8 @@
                         coordinates: [result.coordinates.longitude, result.coordinates.latitude]
                     },
                     properties: {
-                        value: result.measurements[0].value,
-                        unit: result.measurements[0].unit,
+                        value: pm25Data ? pm25Data.value : null,
+                        unit: pm25Data ? pm25Data.unit : null,
                         location: result.location
                     }
                 };
