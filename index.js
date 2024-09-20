@@ -66,6 +66,7 @@
     // Add this line to call addLayerSwitcher immediately after map initialization
     map.on('load', () => {
         console.log('Map loaded');
+        addSkyLayer(); // Add this line
         addLayerSwitcher(); // Explicitly call addLayerSwitcher here
         addSampledPointsLayer();
         initRouteFromURL();
@@ -148,6 +149,7 @@
      */
     function restoreRouteAndMarkers() {
         map.once('style.load', () => {
+            addSkyLayer(); // Add sky layer
             if (route) {
                 addRouteToMap();
                 addMarkersToMap();
@@ -775,4 +777,35 @@
     script.src = 'https://npmcdn.com/@turf/turf/turf.min.js';
     script.onload = () => console.log('Turf.js loaded');
     document.head.appendChild(script);
+
+    function addSkyLayer() {
+        // Calculate sun position based on local time
+        const now = new Date();
+        const hours = now.getHours();
+        const minutes = now.getMinutes();
+        
+        // Convert time to angle (24 hours = 360 degrees)
+        const timeAngle = (hours + minutes / 60) * 15 - 180;
+        
+        // Calculate sun position (simple approximation)
+        const sunPosition = [
+            Math.sin(timeAngle * Math.PI / 180),
+            Math.cos(timeAngle * Math.PI / 180)
+        ];
+        
+        // Calculate sun intensity (higher at midday, lower at night)
+        const sunIntensity = Math.sin((hours / 24) * Math.PI) * 15 + 5;
+        
+        map.addLayer({
+            'id': 'sky',
+            'type': 'sky',
+            'paint': {
+                'sky-type': 'atmosphere',
+                'sky-atmosphere-sun': sunPosition,
+                'sky-atmosphere-sun-intensity': sunIntensity
+            }
+        });
+    }
+
+    addSkyLayer();
 })();
