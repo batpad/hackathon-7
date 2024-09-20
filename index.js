@@ -14,8 +14,8 @@
 
     // Configuration constants
     const CONFIG = {
-        ANIMATION_SPEED: 50, // Update every 50ms
-        SPEED_FACTOR: 400, // meters per second
+        ANIMATION_SPEED: 100, // Update every 50ms
+        SPEED_FACTOR: 100, // meters per second
         INITIAL_CENTER: [-74.5, 40],
         INITIAL_ZOOM: 9,
         INITIAL_PITCH: 75,
@@ -40,14 +40,14 @@
     // Define additional layers
     const additionalLayers = [
         {
+            title: 'Urban Emission Data',
+            tileURL: 'https://earth.gov/ghgcenter/api/raster/searches/50ad78abf9e9c642971cdce22ef8baf0/tiles/WebMercatorQuad/{z}/{x}/{y}?assets=co2&colormap_name=spectral_r&rescale=0%2C2000',
+            attribution: 'GHG Center'
+        },
+        {
             title: 'OpenStreetMap',
             tileURL: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
             attribution: '© OpenStreetMap contributors'
-        },
-        {
-            title: 'Stamen Watercolor',
-            tileURL: 'https://stamen-tiles.a.ssl.fastly.net/watercolor/{z}/{x}/{y}.jpg',
-            attribution: 'Map tiles by Stamen Design, under CC BY 3.0. Data by OpenStreetMap, under CC BY SA.'
         }
     ];
 
@@ -69,6 +69,9 @@
         addLayerSwitcher(); // Explicitly call addLayerSwitcher here
         addSampledPointsLayer();
         initRouteFromURL();
+        
+        // Add Urban Emission Data layer by default
+        addUrbanEmissionLayer();
         
         // Fetch and print available parameters
         fetchAvailableParameters().then(parameters => {
@@ -95,34 +98,48 @@
             const button = createLayerButton(layer, () => {
                 map.setStyle(baseLayers[layer]);
                 restoreRouteAndMarkers();
+                addUrbanEmissionLayer(); // Re-add Urban Emission layer after style change
             });
             layerSwitcher.appendChild(button);
         });
 
         // Add additional layers
-        additionalLayers.forEach(layer => {
+        additionalLayers.forEach((layer, index) => {
             const button = createLayerButton(layer.title, () => {
-                map.setStyle({
-                    version: 8,
-                    sources: {
-                        'raster-tiles': {
+                if (index === 0) { // Urban Emission Data
+                    const visibility = map.getLayoutProperty('urban-emission-layer', 'visibility');
+                    if (visibility === 'visible') {
+                        map.setLayoutProperty('urban-emission-layer', 'visibility', 'none');
+                        button.classList.remove('active');
+                    } else {
+                        map.setLayoutProperty('urban-emission-layer', 'visibility', 'visible');
+                        button.classList.add('active');
+                    }
+                } else {
+                    map.setStyle({
+                        version: 8,
+                        sources: {
+                            'raster-tiles': {
+                                type: 'raster',
+                                tiles: [layer.tileURL],
+                                tileSize: 256,
+                                attribution: layer.attribution
+                            }
+                        },
+                        layers: [{
+                            id: 'simple-tiles',
                             type: 'raster',
-                            tiles: [layer.tileURL],
-                            tileSize: 256,
-                            attribution: layer.attribution
-                        }
-                    },
-                    layers: [{
-                        id: 'simple-tiles',
-                        type: 'raster',
-                        source: 'raster-tiles',
-                        minzoom: 0,
-                        maxzoom: 22
-                    }]
-                });
-                restoreRouteAndMarkers();
+                            source: 'raster-tiles',
+                            minzoom: 0,
+                            maxzoom: 22
+                        }]
+                    });
+                    restoreRouteAndMarkers();
+                    addUrbanEmissionLayer(); // Re-add Urban Emission layer after style change
+                }
             });
             layerSwitcher.appendChild(button);
+            if (index === 0) button.classList.add('active'); // Set Urban Emission Data as active by default
         });
     }
 
@@ -231,11 +248,13 @@
     geocoderStart.on('result', (e) => {
         startCoords = e.result.center;
         if (endCoords) updateURLParams(startCoords, endCoords);
+        map.flyTo({ center: startCoords, zoom: 16, duration: 500 });
     });
 
     geocoderEnd.on('result', (e) => {
         endCoords = e.result.center;
         if (startCoords) updateURLParams(startCoords, endCoords);
+        map.flyTo({ center: endCoords, zoom: 16, duration: 500 });
     });
 
     /**
@@ -300,7 +319,7 @@
             // Fit the map to the route
             const bounds = new mapboxgl.LngLatBounds();
             route.forEach(coord => bounds.extend(coord));
-            map.fitBounds(bounds, { padding: 50 });
+            map.fitBounds(bounds, { padding: 50, duration: 1000 });
 
             // Show slider and play button
             document.getElementById('slider-container').style.display = 'block';
@@ -759,6 +778,27 @@
                 'circle-color': '#B42222',
                 'circle-stroke-width': 2,
                 'circle-stroke-color': '#ffffff'
+            }
+        });
+    }
+
+    /**
+     * Add Urban Emission Data layer
+     */
+    function addUrbanEmissionLayer() {
+        const urbanEmissionLayer = additionalLayers[0]; // Urban Emission Data is now the first layer
+        map.addSource('urban-emission', {
+            type: 'raster',
+            tiles: [urbanEmissionLayer.tileURL],
+            tileSize: 256,
+            attribution: urbanEmissionLayer.attribution
+        });
+        map.addLayer({
+            id: 'urban-emission-layer',
+            type: 'raster',
+            source: 'urban-emission',
+            paint: {
+                'raster-opacity': 0.5
             }
         });
     }
