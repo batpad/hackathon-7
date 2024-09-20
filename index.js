@@ -66,6 +66,7 @@
     // Add this line to call addLayerSwitcher immediately after map initialization
     map.on('load', () => {
         console.log('Map loaded');
+        addSkyLayer(); // Add this line
         addLayerSwitcher(); // Explicitly call addLayerSwitcher here
         addSampledPointsLayer();
         initRouteFromURL();
@@ -148,6 +149,7 @@
      */
     function restoreRouteAndMarkers() {
         map.once('style.load', () => {
+            addSkyLayer(); // Add sky layer
             if (route) {
                 addRouteToMap();
                 addMarkersToMap();
@@ -775,4 +777,18 @@
     script.src = 'https://npmcdn.com/@turf/turf/turf.min.js';
     script.onload = () => console.log('Turf.js loaded');
     document.head.appendChild(script);
+
+    function addSkyLayer() {
+        map.addLayer({
+            'id': 'sky',
+            'type': 'sky',
+            'paint': {
+                'sky-type': 'atmosphere',
+                'sky-atmosphere-sun': [0.0, 0.0],
+                'sky-atmosphere-sun-intensity': 15
+            }
+        });
+    }
+
+    addSkyLayer();
 })();
