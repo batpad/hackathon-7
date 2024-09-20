@@ -779,13 +779,30 @@
     document.head.appendChild(script);
 
     function addSkyLayer() {
+        // Calculate sun position based on local time
+        const now = new Date();
+        const hours = now.getHours();
+        const minutes = now.getMinutes();
+        
+        // Convert time to angle (24 hours = 360 degrees)
+        const timeAngle = (hours + minutes / 60) * 15 - 180;
+        
+        // Calculate sun position (simple approximation)
+        const sunPosition = [
+            Math.sin(timeAngle * Math.PI / 180),
+            Math.cos(timeAngle * Math.PI / 180)
+        ];
+        
+        // Calculate sun intensity (higher at midday, lower at night)
+        const sunIntensity = Math.sin((hours / 24) * Math.PI) * 15 + 5;
+        
         map.addLayer({
             'id': 'sky',
             'type': 'sky',
             'paint': {
                 'sky-type': 'atmosphere',
-                'sky-atmosphere-sun': [0.0, 0.0],
-                'sky-atmosphere-sun-intensity': 15
+                'sky-atmosphere-sun': sunPosition,
+                'sky-atmosphere-sun-intensity': sunIntensity
             }
         });
     }
