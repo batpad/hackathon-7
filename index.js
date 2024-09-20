@@ -39,6 +39,172 @@ const additionalLayers = [
     }
 ];
 
+// Function to fetch available collections from GHGC STAC API
+async function fetchSTACCollections() {
+    const url = 'https://dev.ghg.center/api/stac/collections';
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch collections: ${response.statusText}`);
+        }
+        const data = await response.json();
+        return data.collections; // Return the list of collections
+    } catch (error) {
+        console.error('Error fetching STAC collections:', error);
+        return [];
+    }
+}
+
+
+// Default collection ID
+const DEFAULT_COLLECTION_ID = 'micasa-carbonflux-daygrid-v1';
+
+// Create collection picker and fetch recent items upon selection
+function createCollectionPicker(collections) {
+    const picker = document.createElement('select');
+    picker.id = 'collection-picker';
+    picker.style.position = 'absolute';
+    picker.style.bottom = '10px';
+    picker.style.left = '10px';
+    picker.style.zIndex = '1000';
+    picker.style.padding = '5px';
+
+    collections.forEach(collection => {
+        const option = document.createElement('option');
+        option.value = collection.id;
+        option.textContent = collection.title || collection.id;
+
+        // Pre-select the default collection
+        if (collection.id === DEFAULT_COLLECTION_ID) {
+            option.selected = true;
+        }
+
+        picker.appendChild(option);
+    });
+
+    picker.addEventListener('change', (e) => {
+        const selectedCollection = e.target.value;
+        console.log(`Selected collection: ${selectedCollection}`);
+        fetchRecentSTACItems(selectedCollection);  // Fetch recent items and add tile layer
+    });
+
+    document.body.appendChild(picker);
+
+    // Automatically trigger the fetch for the default collection
+    picker.dispatchEvent(new Event('change'));
+}
+
+
+
+// Function to fetch the most recent STAC items from a selected collection and add the tile layer
+async function fetchRecentSTACItems(collectionId) {
+    const url = `https://dev.ghg.center/api/stac/collections/${collectionId}`;
+    
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`Failed to fetch details for collection ${collectionId}: ${response.statusText}`);
+        }
+        const collection = await response.json();
+
+        if (collection.item_assets && Object.keys(collection.item_assets).length > 0) {
+            // Create dropdown to select item_assets
+            createItemAssetPicker(collectionId, collection.item_assets, collection.renders || null);
+        } else {
+            alert(`No item_assets found for collection ${collectionId}`);
+        }
+    } catch (error) {
+        console.error('Error fetching STAC items:', error);
+    }
+}
+
+// Function to create a dropdown for selecting item_assets
+function createItemAssetPicker(collectionId, itemAssets, renders) {
+    let assetPicker = document.getElementById('asset-picker');
+    
+    if (!assetPicker) {
+        assetPicker = document.createElement('select');
+        assetPicker.id = 'asset-picker';
+        assetPicker.style.position = 'absolute';
+        assetPicker.style.bottom = '40px';
+        assetPicker.style.left = '10px';
+        assetPicker.style.zIndex = '1000';
+        assetPicker.style.padding = '5px';
+        document.body.appendChild(assetPicker);
+    }
+
+    // Clear existing options
+    assetPicker.innerHTML = '';
+
+    // Populate the dropdown with available assets
+    Object.keys(itemAssets).forEach(assetKey => {
+        const option = document.createElement('option');
+        option.value = assetKey;
+        option.textContent = itemAssets[assetKey].title || assetKey;
+        assetPicker.appendChild(option);
+    });
+
+    // Listen for changes in the selected asset
+    assetPicker.addEventListener('change', (e) => {
+        const selectedAsset = e.target.value;
+        console.log(`Selected asset: ${selectedAsset}`);
+        fetchAndAddSTACTiles(collectionId, selectedAsset, renders);
+    });
+
+    // Trigger fetch for the default asset
+    assetPicker.dispatchEvent(new Event('change'));
+}
+
+// Function to fetch and add STAC tiles to the map using the selected asset and renders
+function fetchAndAddSTACTiles(collectionId, selectedAsset, renders) {
+    let map = appState.get('map'); // Get the map object from appState
+
+    // Ensure the map object exists
+    if (!map) {
+        console.error('Map object is not initialized');
+        return;
+    }
+
+    let params = `asset=${selectedAsset}`;
+
+    // If renders are available for this collection and the selected asset
+    if (renders && renders[selectedAsset]) {
+        // Iterate over the properties of renders[selectedAsset] to build query parameters
+        const renderParams = Object.keys(renders[selectedAsset])
+            .map(key => `${key}=${renders[selectedAsset][key]}`)
+            .join('&');
+
+        params = `${params}&${renderParams}`;
+    } else {
+        // Use cog_default if no renders are specified
+        params = `${params}&asset=cog_default`;
+    }
+
+    // Construct the tile URL with the query parameters
+    const tileURLTemplate = `https://dev.ghg.center/api/raster/collections/${collectionId}/tiles/WebMercatorQuad/{z}/{x}/{y}?${params}`;
+
+    // Add the new tile source
+    map.addSource(`stac-tiles-${collectionId}`, {
+        type: 'raster',
+        tiles: [tileURLTemplate],
+        tileSize: 256,
+        attribution: '© GHG Center'
+    });
+
+    // Add the raster tile layer to the map, keeping it on top
+    const topLayerId = map.getStyle().layers[map.getStyle().layers.length - 1].id;
+    map.addLayer({
+        id: `stac-layer-${collectionId}`,
+        type: 'raster',
+        source: `stac-tiles-${collectionId}`,
+        paint: {
+            'raster-opacity': 0.8
+        }
+    }, topLayerId);
+}
+
+
 function initMap() {
     const map = new mapboxgl.Map({
         container: 'map',
@@ -58,12 +224,20 @@ function initMap() {
         addSampledPointsLayer();
         initRouteFromURL();
         
+
+        // Fetch collections and create collection picker
+        fetchSTACCollections().then(collections => {
+            console.log('Fetched collections:', collections);
+            createCollectionPicker(collections);
+        });
+
         openaq.fetchAvailableParameters().then(parameters => {
             console.log('Fetched parameters:', parameters);
             createParameterPicker(parameters);
         });
     });
 }
+
 
 function addLayerSwitcher() {
     console.log('Adding layer switcher');
