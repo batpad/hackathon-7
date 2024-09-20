@@ -51,32 +51,6 @@
         }
     ];
 
-    // Add OpenAQ layer configuration
-    const openAQLayer = {
-        id: 'openaq-data',
-        type: 'circle',
-        source: {
-            type: 'geojson',
-            data: {
-                type: 'FeatureCollection',
-                features: []
-            }
-        },
-        paint: {
-            'circle-radius': 8,
-            'circle-color': [
-                'interpolate',
-                ['linear'],
-                ['get', 'value'],
-                0, '#00ff00',
-                50, '#ffff00',
-                100, '#ff0000'
-            ],
-            'circle-opacity': 0.7
-        }
-    };
-
-
     /**
      * Initialize the map
      */
@@ -89,15 +63,17 @@
         bearing: CONFIG.INITIAL_BEARING
     });
 
-    // Global variable to track if OpenAQ layer has been added
-    let openAQLayerAdded = false;
-
     // Add this line to call addLayerSwitcher immediately after map initialization
     map.on('load', () => {
         console.log('Map loaded');
-        addOpenAQLayer();
         addLayerSwitcher(); // Explicitly call addLayerSwitcher here
+        addSampledPointsLayer();
         initRouteFromURL();
+        
+        // Fetch and print available parameters
+        fetchAvailableParameters().then(parameters => {
+            console.log('Fetched parameters:', parameters);
+        });
     });
 
     /**
@@ -148,49 +124,6 @@
             });
             layerSwitcher.appendChild(button);
         });
-
-        // Add OpenAQ layer toggle
-        const openAQToggle = createLayerButton('OpenAQ', () => {
-            if (!openAQLayerAdded) {
-                console.log('OpenAQ layer not yet added. Adding now...');
-                addOpenAQLayer();
-            }
-            
-            toggleOpenAQLayer(openAQToggle);
-        });
-        layerSwitcher.appendChild(openAQToggle);
-    }
-
-    /**
-     * New function to toggle OpenAQ layer visibility
-     * @param {HTMLButtonElement} button - The button element associated with the OpenAQ layer toggle
-     */
-    function toggleOpenAQLayer(button) {
-        console.log('Toggling OpenAQ layer');
-        if (!map.getLayer('openaq-data')) {
-            console.error('OpenAQ layer not found. Attempting to add it.');
-            addOpenAQLayer();
-        }
-
-        try {
-            const visibility = map.getLayoutProperty('openaq-data', 'visibility');
-            console.log('Current OpenAQ layer visibility:', visibility);
-            if (visibility === 'visible') {
-                map.setLayoutProperty('openaq-data', 'visibility', 'none');
-                map.setLayoutProperty('openaq-labels', 'visibility', 'none');
-                button.classList.remove('active');
-                console.log('OpenAQ layer hidden');
-            } else {
-                map.setLayoutProperty('openaq-data', 'visibility', 'visible');
-                map.setLayoutProperty('openaq-labels', 'visibility', 'visible');
-                button.classList.add('active');
-                console.log('OpenAQ layer shown');
-                fetchOpenAQData();
-            }
-        } catch (error) {
-            console.error('Error toggling OpenAQ layer:', error);
-            alert('There was an error toggling the OpenAQ layer. Please try refreshing the page.');
-        }
     }
 
     /**
@@ -219,7 +152,6 @@
                 addRouteToMap();
                 addMarkersToMap();
             }
-            addOpenAQLayer(); // Add this line to ensure OpenAQ layer is added after style changes
         });
     }
 
@@ -386,6 +318,10 @@
 
             // Initial animation
             animateRoute(0);
+
+            // Fetch OpenAQ data along the route
+            const selectedParameter = document.getElementById('parameter-picker').value;
+            fetchOpenAQDataAlongRoute(selectedParameter);
         })
         .catch(error => console.error('Error:', error));
     }
@@ -453,6 +389,9 @@
 
         currentPositionMarker.setLngLat(pointAlong.geometry.coordinates);
 
+        // Update nearest air quality display
+        updateNearestAQDisplay(pointAlong);
+
         map.easeTo({
             center: cameraTarget,
             bearing: bearing,
@@ -460,6 +399,275 @@
             zoom: 16,
             duration: 50
         });
+    }
+
+    // Add this function to fetch available parameters
+    function fetchAvailableParameters() {
+        const corsProxy = 'https://cors-anywhere.herokuapp.com/';
+        const url = `${corsProxy}https://api.openaq.org/v2/parameters`;
+
+        console.log('Fetching available parameters...');
+
+        return fetch(url, {
+            method: 'GET',
+            headers: {
+                'X-API-Key': OPENAQ_API_KEY
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log('Available parameters:', data.results);
+            createParameterPicker(data.results);
+            return data.results;
+        })
+        .catch(error => {
+            console.error('Error fetching parameters:', error);
+            createParameterPicker([{id: 'pm25', name: 'PM2.5'}]); // Fallback to PM2.5 if fetch fails
+            return [{id: 'pm25', name: 'PM2.5'}];
+        });
+    }
+
+    // Add this function to create the parameter picker
+    function createParameterPicker(parameters) {
+        const picker = document.createElement('select');
+        picker.id = 'parameter-picker';
+        picker.style.position = 'absolute';
+        picker.style.bottom = '10px';
+        picker.style.right = '10px';
+        picker.style.zIndex = '1000';
+        picker.style.padding = '5px';
+
+        parameters.forEach(param => {
+            const option = document.createElement('option');
+            option.value = param.id;
+            option.textContent = param.name;
+            picker.appendChild(option);
+        });
+
+        picker.addEventListener('change', (e) => {
+            const selectedParameter = e.target.value;
+            console.log(`Selected parameter: ${selectedParameter}`);
+            fetchOpenAQDataAlongRoute(selectedParameter);
+        });
+
+        document.body.appendChild(picker);
+    }
+
+    // Helper function to create a delay
+    function delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // Global variable to store averages for all parameters
+    let allAverages = {};
+
+    async function fetchOpenAQDataAlongRoute(selectedParameter = 'pm25') {
+        if (!route || route.length === 0) {
+            console.error('No route available');
+            return;
+        }
+
+        const parameterName = document.getElementById('parameter-picker').options[document.getElementById('parameter-picker').selectedIndex].text;
+        console.log(`Fetching data for parameter: ${parameterName} (${selectedParameter})`);
+
+        const numPoints = 10; // Fixed number of points to sample
+        const routeLength = turf.length(turf.lineString(route), {units: 'meters'});
+        const interval = routeLength / (numPoints - 1); // Distance between each sample point in meters
+        const corsProxy = 'https://cors-anywhere.herokuapp.com/';
+
+        const sampledPoints = [];
+
+        // Get the date for 1 week ago
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+        const dateFrom = oneWeekAgo.toISOString();
+        const dateTo = new Date().toISOString();
+
+        const fetchRequests = [];
+
+        for (let i = 0; i < numPoints; i++) {
+            const distance = i * interval;
+            const point = turf.along(turf.lineString(route), distance, {units: 'meters'}).geometry.coordinates;
+            const roundedLon = parseFloat(point[0].toFixed(8));
+            const roundedLat = parseFloat(point[1].toFixed(8));
+            const url = `${corsProxy}https://api.openaq.org/v2/measurements?date_from=${dateFrom}&date_to=${dateTo}&parameter_id=${selectedParameter}&coordinates=${roundedLat},${roundedLon}&radius=25000&limit=1`;
+            
+            console.log(`Preparing fetch for point ${i + 1}/${numPoints}: ${roundedLat}, ${roundedLon}`);
+            console.log(`API call: ${url}`);
+            
+            sampledPoints.push({
+                type: 'Feature',
+                geometry: {
+                    type: 'Point',
+                    coordinates: [roundedLon, roundedLat]
+                },
+                properties: {
+                    id: i
+                }
+            });
+
+            fetchRequests.push({url, index: i});
+        }
+
+        async function fetchWithRetry(url, retries = 3, backoff = 1000) {
+            try {
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'X-API-Key': OPENAQ_API_KEY,
+                        'accept': 'application/json'
+                    }
+                });
+
+                if (response.status === 429 && retries > 0) {
+                    console.log(`Rate limited. Retrying in ${backoff}ms...`);
+                    await delay(backoff);
+                    return fetchWithRetry(url, retries - 1, backoff * 2);
+                }
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                return await response.json();
+            } catch (error) {
+                if (retries > 0) {
+                    console.log(`Error occurred. Retrying in ${backoff}ms...`);
+                    await delay(backoff);
+                    return fetchWithRetry(url, retries - 1, backoff * 2);
+                } else {
+                    throw error;
+                }
+            }
+        }
+
+        try {
+            const results = [];
+            for (const request of fetchRequests) {
+                try {
+                    const result = await fetchWithRetry(request.url);
+                    console.log(`Fetched data for point ${request.index + 1}/${fetchRequests.length}:`, result);
+                    results.push(result);
+                } catch (error) {
+                    console.error(`Failed to fetch data for point ${request.index + 1}/${fetchRequests.length}:`, error);
+                    results.push(null);
+                }
+                await delay(300); // 300ms delay between requests
+            }
+
+            console.log('All data fetched:', results);
+
+            // Process the results
+            const airQualityData = results.map((result, index) => {
+                if (!result) return null;
+                const distance = index * interval;
+                const point = turf.along(turf.lineString(route), distance, {units: 'meters'}).geometry.coordinates;
+                const measurement = result.results[0];
+                if (measurement) {
+                    return {
+                        coordinates: [parseFloat(point[0].toFixed(8)), parseFloat(point[1].toFixed(8))],
+                        value: measurement.value,
+                        unit: measurement.unit,
+                        parameter: measurement.parameter,
+                        date: measurement.date.utc
+                    };
+                }
+                return null;
+            }).filter(data => data !== null);
+
+            console.log('Filtered airQualityData:', airQualityData);
+
+            window.airQualityData = airQualityData;
+
+            if (airQualityData.length > 0) {
+                // Group measurements by parameter and unit
+                const groupedData = airQualityData.reduce((acc, data) => {
+                    const key = `${data.parameter}_${data.unit}`;
+                    if (!acc[key]) {
+                        acc[key] = [];
+                    }
+                    acc[key].push(data);
+                    return acc;
+                }, {});
+
+                // Calculate average for each group
+                Object.entries(groupedData).forEach(([key, dataArray]) => {
+                    const [parameter, unit] = key.split('_');
+                    const totalValue = dataArray.reduce((sum, data) => sum + data.value, 0);
+                    const averageValue = totalValue / dataArray.length;
+
+                    console.log(`Average ${parameter}: ${averageValue.toFixed(2)} ${unit}`);
+                    
+                    // Store or update the average in the global allAverages object
+                    allAverages[key] = {
+                        parameter,
+                        unit,
+                        value: averageValue
+                    };
+                });
+
+                // Update the display with all averages
+                updateAveragesDisplay();
+            } else {
+                console.log('No air quality data available for this route');
+                updateOrCreateDisplay('average-aq', 'No air quality data available for this route', '70px', '10px');
+            }
+
+            // Add sampled points to the map
+            addSampledPointsLayer();
+            map.getSource('sampled-points').setData({
+                type: 'FeatureCollection',
+                features: sampledPoints
+            });
+        } catch (error) {
+            console.error('Error fetching OpenAQ data along route:', error);
+        }
+    }
+
+    function updateAveragesDisplay() {
+        let averagesHtml = '<h3>Average Air Quality Measurements:</h3><ul>';
+        Object.values(allAverages).forEach(({ parameter, unit, value }) => {
+            averagesHtml += `<li>${parameter}: ${value.toFixed(2)} ${unit}</li>`;
+        });
+        averagesHtml += '</ul>';
+
+        updateOrCreateDisplay('average-aq', averagesHtml, '70px', '10px');
+    }
+
+    function updateNearestAQDisplay(currentPoint) {
+        if (window.airQualityData && window.airQualityData.length > 0) {
+            const closestPoint = window.airQualityData.reduce((prev, curr) => {
+                const prevDistance = turf.distance(turf.point(prev.coordinates), currentPoint);
+                const currDistance = turf.distance(turf.point(curr.coordinates), currentPoint);
+                return prevDistance < currDistance ? prev : curr;
+            });
+
+            if (closestPoint.value !== null) {
+                const parameterName = document.getElementById('parameter-picker').options[document.getElementById('parameter-picker').selectedIndex].text;
+                updateOrCreateDisplay('nearest-aq', `Nearest ${parameterName}: ${closestPoint.value.toFixed(2)} ${closestPoint.unit}`, '10px', '10px');
+            }
+        }
+    }
+
+    function updateOrCreateDisplay(id, html, top, right) {
+        let display = document.getElementById(id);
+        if (!display) {
+            display = document.createElement('div');
+            display.id = id;
+            display.style.position = 'absolute';
+            display.style.padding = '10px';
+            display.style.backgroundColor = 'rgba(255, 255, 255, 0.8)';
+            display.style.border = '1px solid black';
+            display.style.borderRadius = '5px';
+            display.style.zIndex = '1000';
+            display.style.maxWidth = '300px';
+            display.style.overflowY = 'auto';
+            display.style.maxHeight = '80vh';
+            document.body.appendChild(display);
+        }
+        display.style.top = top;
+        display.style.right = right;
+        display.innerHTML = html;
     }
 
     /**
@@ -525,128 +733,16 @@
         }
     }
 
-    /**
-     * Fetch OpenAQ data and add it to the map
-     */
-    function fetchOpenAQData() {
-        console.log('fetchOpenAQData called');
-        if (!map.getSource('openaq-data')) {
-            console.error('OpenAQ data source not found on the map');
-            return;
+    // Add this function to create a new layer for sampled points
+    function addSampledPointsLayer() {
+        if (map.getLayer('sampled-points')) {
+            map.removeLayer('sampled-points');
+        }
+        if (map.getSource('sampled-points')) {
+            map.removeSource('sampled-points');
         }
 
-        const bounds = map.getBounds();
-        const center = bounds.getCenter();
-        const lat = center.lat.toFixed(6);
-        const lng = center.lng.toFixed(6);
-        const corsProxy = 'https://cors-anywhere.herokuapp.com/';
-        const url = `${corsProxy}https://api.openaq.org/v2/latest?limit=100&parameter=pm25&coordinates=${lat},${lng}&radius=25000`;
-
-        console.log('Fetching OpenAQ data from URL:', url);
-
-        fetch(url, {
-            method: 'GET',
-            headers: {
-                'X-API-Key': OPENAQ_API_KEY
-            }
-        })
-            .then(response => {
-                if (!response.ok) {
-                    return response.text().then(text => {
-                        throw new Error(`HTTP error! status: ${response.status}, message: ${text}`);
-                    });
-                }
-                return response.json();
-            })
-            .then(data => {
-                console.log('OpenAQ data received:', data);
-                processOpenAQData(data);
-            })
-            .catch(error => {
-                console.error('Error fetching OpenAQ data:', error);
-                alert('Failed to fetch OpenAQ data. Please check the console for more details.');
-            });
-    }
-
-    // Declare processOpenAQData in the global scope
-    window.processOpenAQData = function(data) {
-        console.log('processOpenAQData called with data:', data);
-
-        if (!data || !data.results || !Array.isArray(data.results)) {
-            console.error('Unexpected API response structure:', data);
-            return;
-        }
-
-        console.log('Number of results:', data.results.length);
-
-        const features = data.results
-            .filter(result => {
-                console.log('Filtering result:', result);
-                if (!result || !result.coordinates || !result.measurements) {
-                    console.warn('Invalid result object:', result);
-                    return false;
-                }
-                return result.measurements.some(m => m.parameter === 'pm25');
-            })
-            .map(result => {
-                console.log('Mapping result:', result);
-                const pm25Data = result.measurements.find(m => m.parameter === 'pm25');
-                const feature = {
-                    type: 'Feature',
-                    geometry: {
-                        type: 'Point',
-                        coordinates: [result.coordinates.longitude, result.coordinates.latitude]
-                    },
-                    properties: {
-                        value: pm25Data ? pm25Data.value : null,
-                        unit: pm25Data ? pm25Data.unit : null,
-                        location: result.location
-                    }
-                };
-                console.log('Processed feature:', JSON.stringify(feature));
-                return feature;
-            });
-
-        console.log('Total processed features:', features.length);
-
-        if (features.length === 0) {
-            console.warn('No valid OpenAQ data points found in the current view');
-            return;
-        }
-
-        if (!window.map || !window.map.getSource('openaq-data')) {
-            console.error('OpenAQ data source not found when trying to update');
-            return;
-        }
-
-        window.map.getSource('openaq-data').setData({
-            type: 'FeatureCollection',
-            features: features
-        });
-
-        console.log('OpenAQ data updated on the map');
-    };
-
-    // Make map globally accessible
-    window.map = map;
-
-    // Add this function definition near your other function definitions
-    function addOpenAQLayer() {
-        console.log('Adding OpenAQ layer');
-        if (map.getLayer('openaq-data')) {
-            console.log('OpenAQ layer already exists');
-            return;
-        }
-
-        // Ensure the style has a glyphs property
-        if (!map.getStyle().glyphs) {
-            map.setStyle({
-                ...map.getStyle(),
-                glyphs: "mapbox://fonts/mapbox/{fontstack}/{range}.pbf"
-            });
-        }
-
-        map.addSource('openaq-data', {
+        map.addSource('sampled-points', {
             type: 'geojson',
             data: {
                 type: 'FeatureCollection',
@@ -654,53 +750,21 @@
             }
         });
 
-        // Add circle layer
         map.addLayer({
-            id: 'openaq-data',
+            id: 'sampled-points',
             type: 'circle',
-            source: 'openaq-data',
+            source: 'sampled-points',
             paint: {
-                'circle-radius': 15,  // Increased size
-                'circle-color': [
-                    'interpolate',
-                    ['linear'],
-                    ['get', 'value'],
-                    0, '#00ff00',
-                    50, '#ffff00',
-                    100, '#ff0000'
-                ],
-                'circle-opacity': 1,  // Full opacity
-                'circle-stroke-width': 2,  // Add a stroke
-                'circle-stroke-color': '#000000'  // Black stroke
-            },
-            layout: {
-                'visibility': 'none'  // Start with the layer hidden
+                'circle-radius': 6,
+                'circle-color': '#B42222',
+                'circle-stroke-width': 2,
+                'circle-stroke-color': '#ffffff'
             }
         });
-
-        // Add text layer for labels
-        map.addLayer({
-            id: 'openaq-labels',
-            type: 'symbol',
-            source: 'openaq-data',
-            layout: {
-                'text-field': ['concat', ['to-string', ['get', 'value']], ' ', ['get', 'unit']],
-                'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-                'text-size': 12,
-                'text-offset': [0, -2],
-                'text-anchor': 'bottom',
-                'visibility': 'none'  // Start with the layer hidden
-            },
-            paint: {
-                'text-color': '#ffffff',
-                'text-halo-color': '#000000',
-                'text-halo-width': 1
-            }
-        });
-
-        console.log('OpenAQ layer added');
-        openAQLayerAdded = true;  // Set the flag to true
     }
+
+    // Make map globally accessible
+    window.map = map;
 
     // Event listeners
     document.getElementById('route').addEventListener('click', getRoute);
