@@ -29,6 +29,7 @@
     let isPlaying = false;
     let animationInterval;
     let routeLength;
+    let animationStartTime;
 
     // Define base layers
     const baseLayers = {
@@ -357,6 +358,9 @@
 
             // Animate route on slider change
             slider.addEventListener('input', (e) => {
+                if (isPlaying) {
+                    togglePlayPause(); // Pause the animation if it's playing
+                }
                 const distanceAlongRoute = parseFloat(e.target.value) / 1000; // Convert to kilometers
                 animateRoute(distanceAlongRoute);
             });
@@ -367,6 +371,9 @@
             // Fetch OpenAQ data along the route
             const selectedParameter = document.getElementById('parameter-picker').value;
             fetchOpenAQDataAlongRoute(selectedParameter);
+
+            // Set up slider interaction
+            setupSlider();
         })
         .catch(error => console.error('Error:', error));
     }
@@ -396,12 +403,15 @@
      */
     function playAnimation() {
         const slider = document.getElementById('slider');
-        const animationDuration = parseInt(slider.max) / CONFIG.SPEED_FACTOR; // Calculate duration based on route length and speed
-        const startTime = Date.now() - (parseInt(slider.value) / CONFIG.SPEED_FACTOR);
+        const animationDuration = parseInt(slider.max) / CONFIG.SPEED_FACTOR;
+        
+        // Use the current slider value to calculate the start time
+        const currentDistance = parseFloat(slider.value);
+        animationStartTime = Date.now() - (currentDistance / CONFIG.SPEED_FACTOR * 1000);
 
         animationInterval = setInterval(() => {
             const currentTime = Date.now();
-            const elapsedTime = currentTime - startTime;
+            const elapsedTime = currentTime - animationStartTime;
             const distance = (elapsedTime * CONFIG.SPEED_FACTOR) / 1000; // Calculate distance in meters
             
             slider.value = Math.min(distance, slider.max);
